@@ -1,0 +1,22 @@
+<!-- Komado オリジナルアイコン: 画面の枠と、右下に浮かぶ小窓（ピクチャーインピクチャー） -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <!-- 画面の枠 -->
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="4"
+        android:pathData="M35,36h38a7,7 0,0 1,7 7v22a7,7 0,0 1,-7 7h-38a7,7 0,0 1,-7 -7v-22a7,7 0,0 1,7 -7z" />
+    <!-- 画面内のコンテンツを表す横線 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:fillAlpha="0.55"
+        android:pathData="M36,45h20a2,2 0,0 1,0 4h-20a2,2 0,0 1,0 -4zM36,53h12a2,2 0,0 1,0 4h-12a2,2 0,0 1,0 -4z" />
+    <!-- 小窓（PiP） -->
+    <path
+        android:fillColor="#3DDC97"
+        android:pathData="M58,52h15a3,3 0,0 1,3 3v10a3,3 0,0 1,-3 3h-15a3,3 0,0 1,-3 -3v-10a3,3 0,0 1,3 -3z" />
+</vector>

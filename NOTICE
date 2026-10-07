@@ -1,0 +1,57 @@
+Komado
+Copyright 2026 Komado contributors
+
+This product is licensed under the Apache License, Version 2.0 (see LICENSE).
+
+------------------------------------------------------------------------------
+Third-party software included in the application (Apache License, Version 2.0)
+------------------------------------------------------------------------------
+
+- AndroidX libraries (Activity, Annotation, Arch Core, Collection, Concurrent,
+  Core, Interpolator, Lifecycle, Media, ProfileInstaller, SavedState, Startup,
+  Tracing, VersionedParcelable, WebKit)
+  Copyright The Android Open Source Project
+- Kotlin Standard Library
+  Copyright JetBrains s.r.o. and Kotlin Programming Language contributors
+- kotlinx.coroutines
+  Copyright JetBrains s.r.o. and contributors
+- Guava ListenableFuture
+  Copyright The Guava Authors
+- JetBrains Java Annotations
+  Copyright JetBrains s.r.o.
+- JSpecify
+  Copyright The JSpecify Authors
+
+------------------------------------------------------------------------------
+Icons
+------------------------------------------------------------------------------
+
+The notification, Picture-in-Picture and shortcut icons in
+app/src/main/res/drawable/ (ic_play, ic_pause, ic_rewind, ic_forward,
+ic_skip_next, ic_skip_previous, ic_close, ic_notification, ic_shortcut_info)
+are based on Material Icons by Google, licensed under the Apache License,
+Version 2.0. https://github.com/google/material-design-icons
+
+The launcher icon (ic_launcher_foreground) is original artwork of this project.
+
+------------------------------------------------------------------------------
+Services and data used at runtime (not included in this repository)
+------------------------------------------------------------------------------
+
+- EasyList and EasyPrivacy filter lists, by The EasyList authors
+  https://easylist.to/
+  Dual-licensed under GNU GPL v3 and CC BY-SA 3.0.
+  The lists are downloaded from the publisher at runtime and are not
+  redistributed with this application.
+
+- SponsorBlock, by Ajay Ramachandran and SponsorBlock contributors
+  https://sponsor.ajay.app/
+  Segment data is licensed under CC BY-NC-SA 4.0.
+
+------------------------------------------------------------------------------
+Trademarks
+------------------------------------------------------------------------------
+
+YouTube and Google are trademarks of Google LLC. Brave is a trademark of
+Brave Software, Inc. This project is not affiliated with, endorsed by, or
+sponsored by Google LLC, YouTube, or Brave Software, Inc.
