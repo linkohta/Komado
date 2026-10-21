@@ -1,0 +1,16 @@
+{
+  "name": "komado-web",
+  "private": true,
+  "description": "Komado が YouTube のページに注入するスクリプト（TypeScript）",
+  "type": "module",
+  "scripts": {
+    "check": "tsc -p .",
+    "bundle": "node build.mjs",
+    "build": "tsc -p . && node build.mjs",
+    "test": "node --experimental-strip-types --test \"test/*.test.mjs\""
+  },
+  "devDependencies": {
+    "esbuild": "0.28.2",
+    "typescript": "7.0.2"
+  }
+}

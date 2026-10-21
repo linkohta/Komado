@@ -1,4 +1,6 @@
+import org.gradle.process.ExecOperations
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import javax.inject.Inject
 
 plugins {
     id("com.android.application")
@@ -46,4 +48,60 @@ dependencies {
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 
     testImplementation("junit:junit:4.13.2")
+}
+
+// ---------------------------------------------------------------- ページに注入するスクリプト（web/）
+
+/**
+ * web/ の TypeScript を型検査して komado.js 1 本にバンドルし、生成アセットとして APK に入れる。
+ * Node.js（npm）が必要。web/node_modules が無ければ最初に npm ci する。
+ */
+abstract class BundleWebScripts : DefaultTask() {
+    @get:Internal
+    abstract val webDir: DirectoryProperty
+
+    @get:InputFiles
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val sources: ConfigurableFileCollection
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Inject
+    abstract val execOperations: ExecOperations
+
+    @TaskAction
+    fun bundle() {
+        val dir = webDir.get().asFile
+        val out = outputDir.get().asFile
+        out.deleteRecursively()
+        out.mkdirs()
+        if (!dir.resolve("node_modules").isDirectory) npm(dir, "ci")
+        npm(dir, "run", "build", "--", "--outdir=${out.absolutePath}")
+    }
+
+    private fun npm(dir: File, vararg args: String) {
+        val windows = System.getProperty("os.name").startsWith("Windows")
+        val command = (if (windows) listOf("cmd", "/c", "npm") else listOf("npm")) + args
+        try {
+            execOperations.exec {
+                workingDir = dir
+                commandLine(command)
+            }
+        } catch (e: Exception) {
+            throw GradleException("web/ のビルドに失敗しました（Node.js と npm が必要です）: npm ${args.joinToString(" ")}", e)
+        }
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val name = variant.name.replaceFirstChar { it.uppercase() }
+        val bundle = tasks.register<BundleWebScripts>("bundle${name}WebScripts") {
+            val web = layout.projectDirectory.dir("../web")
+            webDir.set(web)
+            sources.from(web.dir("src"), web.files("package.json", "package-lock.json", "tsconfig.json", "build.mjs"))
+        }
+        variant.sources.assets?.addGeneratedSourceDirectory(bundle, BundleWebScripts::outputDir)
+    }
 }

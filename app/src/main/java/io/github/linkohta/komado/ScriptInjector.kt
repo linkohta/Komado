@@ -7,17 +7,15 @@ import androidx.webkit.WebViewFeature
 import org.json.JSONArray
 
 /**
- * inject.js と livechat.js を YouTube のページに document-start で注入し、
- * ページ内の `window.__komado` API を呼び出す窓口。
+ * komado.js を YouTube のページに document-start で注入し、ページ内の `window.__komado` API を呼び出す窓口。
  *
+ * komado.js は web/（TypeScript）からビルド時に生成されるアセット（app/build.gradle.kts の bundle*WebScripts）。
  * 注入するスクリプトの先頭には `window.__KOMADO_CSS`（要素非表示セレクタの配列）を付ける。
  */
 class ScriptInjector(private val webView: WebView, private val adBlocker: AdBlocker) {
 
     private val bundledJs by lazy {
-        SCRIPT_ASSETS.joinToString("\n") { name ->
-            webView.context.assets.open(name).bufferedReader().use { it.readText() }
-        }
+        webView.context.assets.open(SCRIPT_ASSET).bufferedReader().use { it.readText() }
     }
 
     private var scriptHandler: ScriptHandler? = null
@@ -57,7 +55,6 @@ class ScriptInjector(private val webView: WebView, private val adBlocker: AdBloc
     private fun selectorsJson() = JSONArray(adBlocker.cosmeticSelectors).toString()
 
     companion object {
-        /** 連結順に意味がある: livechat.js は inject.js が作る window.__komado に依存する */
-        private val SCRIPT_ASSETS = listOf("inject.js", "livechat.js")
+        private const val SCRIPT_ASSET = "komado.js"
     }
 }

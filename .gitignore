@@ -4,3 +4,7 @@
 build/
 local.properties
 *.iml
+
+# web（TypeScript）
+node_modules/
+web/dist/
