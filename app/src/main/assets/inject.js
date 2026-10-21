@@ -6,6 +6,7 @@
  *  4. 再生状態をアプリへ通知し、通知・PiP ボタンからの操作を受ける
  *  5. SponsorBlock のセグメントをスキップ
  * ライブ配信のコメント（弾幕・投稿）は livechat.js が担当し、このスクリプトの後ろに連結される。
+ * livechat.js には window.__komado 経由で「JSON 応答の監視（onJson）」「現在の動画（videoId / video）」を提供する。
  * 先頭に window.__KOMADO_CSS（フィルターリストのセレクタ配列）がアプリ側で付加される。
  */
 (function () {
@@ -21,6 +22,19 @@
   }
 
   // ------------------------------------------------------------------ 1. 広告データの除去
+  // YouTube が受け取った JSON（JSON.parse / Response.json / ytInitialPlayerResponse）をフックする。
+  // 広告除去のほか、他のスクリプトも onJson で同じ応答を覗ける（二重にフックしないため）
+  var jsonListeners = [];
+  api.onJson = function (listener) { jsonListeners.push(listener); };
+
+  function observe(result) {
+    try { if (hasAds(result)) prune(result); } catch (e) {}
+    for (var i = 0; i < jsonListeners.length; i++) {
+      try { jsonListeners[i](result); } catch (e) {}
+    }
+    return result;
+  }
+
   var AD_KEYS = ['adPlacements', 'adSlots', 'playerAds', 'adBreakHeartbeatParams'];
 
   function hasAds(o) {
@@ -37,17 +51,12 @@
 
   var nativeParse = JSON.parse;
   JSON.parse = function () {
-    var result = nativeParse.apply(this, arguments);
-    try { if (hasAds(result)) prune(result); } catch (e) {}
-    return result;
+    return observe(nativeParse.apply(this, arguments));
   };
 
   var nativeJson = Response.prototype.json;
   Response.prototype.json = function () {
-    return nativeJson.apply(this, arguments).then(function (result) {
-      try { if (hasAds(result)) prune(result); } catch (e) {}
-      return result;
-    });
+    return nativeJson.apply(this, arguments).then(observe);
   };
 
   // HTML に埋め込まれた初期プレイヤー情報（var ytInitialPlayerResponse = {...}）
@@ -57,7 +66,7 @@
       Object.defineProperty(window, 'ytInitialPlayerResponse', {
         configurable: true,
         get: function () { return value; },
-        set: function (v) { value = hasAds(v) ? prune(v) : v; }
+        set: function (v) { value = observe(v); }
       });
     } catch (e) {}
   })();
@@ -157,10 +166,12 @@
     };
   }
 
+  /** メインプレイヤーの <video>（おすすめ欄のインライン再生などは含めない） */
   function currentVideo() {
     return document.querySelector('.html5-video-player video') || document.querySelector('video');
   }
 
+  /** URL から現在の動画 ID（/watch?v= と /shorts/ /live/）。動画ページでなければ null */
   function currentVideoId() {
     try {
       var url = new URL(location.href);
@@ -171,6 +182,8 @@
       return null;
     }
   }
+  api.video = currentVideo;
+  api.videoId = currentVideoId;
 
   var lastKey = '';
   function report(force) {

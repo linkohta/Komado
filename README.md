@@ -31,16 +31,24 @@ Android Studio でこのフォルダを開いて実行するか、次のコマ�
 ```
 app/src/main/
 ├── java/io/github/linkohta/komado/
-│   ├── MainActivity.kt         WebView・PiP・全画面・JS ブリッジ
+│   ├── MainActivity.kt         WebView の設定・JS ブリッジ・ライフサイクル
+│   ├── ScriptInjector.kt       inject.js / livechat.js の注入とページ API の呼び出し
+│   ├── FullscreenController.kt HTML5 全画面の表示・解除
+│   ├── PipController.kt        PiP パラメータの組み立て
 │   ├── BackgroundWebView.kt    非表示時も「表示中」として振る舞う WebView
 │   ├── YouTubeWebViewClient.kt ドメイン制限・広告リクエストの遮断
-│   ├── AdBlocker.kt            フィルターリストの取得・解析・照合
+│   ├── AdBlocker.kt            フィルターリストの取得・キャッシュ・照合
+│   ├── FilterParser.kt         Adblock Plus 形式の解析
+│   ├── FilterRules.kt          解析済みルールと保護リスト
 │   ├── PlaybackService.kt      フォアグラウンドサービス・MediaSession・通知
 │   ├── PlaybackHub.kt          Activity と通知 / PiP 間の状態共有
+│   ├── PlaybackState.kt        再生状態とコマンドの型
 │   ├── ControlReceiver.kt      通知・PiP ボタンの受信
 │   ├── SponsorBlockClient.kt   SponsorBlock API
 │   ├── LicensesActivity.kt     ライセンスとクレジット画面
-│   └── UrlPolicy.kt            表示を許可する URL
+│   ├── UrlPolicy.kt            表示を許可する URL
+│   ├── EdgeToEdge.kt           システムバー周りの共通処理
+│   └── Http.kt                 HttpURLConnection の定型
 └── assets/
     ├── inject.js               YouTube ページに注入するスクリプト
     ├── livechat.js             ライブチャットの取得・弾幕表示・投稿

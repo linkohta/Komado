@@ -1,6 +1,7 @@
 /*
  * Komado: ライブ配信・アーカイブのチャットをニコニコ動画風に動画上へ流す（弾幕）＋チャット投稿。
  * inject.js の後ろに連結して document-start で注入される（トップフレームのみ）。
+ * JSON 応答の監視と現在の動画の取得は inject.js の window.__komado を使う。
  *
  *  - m.youtube.com から同一オリジンで InnerTube API を呼ぶ:
  *      /youtubei/v1/next                … チャットの継続トークンと投稿用パラメータ（WEB クライアント指定）
@@ -12,9 +13,12 @@
  */
 (function () {
   'use strict';
-  if (window.__komadoLive || window.top !== window) return;
+  if (window.__komadoLive || window.top !== window || !window.__komado) return;
 
   var api = (window.__komadoLive = {});
+  var komado = window.__komado;
+  var currentVideo = komado.video;
+  var currentVideoId = komado.videoId;
   var STORAGE_KEY = 'komado.danmaku';
   var WEB_CLIENT_VERSION = '2.20251007.01.00';
   var MAX_ITEMS = 80;        // 画面上に同時に出すコメントの上限
@@ -53,22 +57,7 @@
     else if (o.playerResponse) notePlayerResponse(o.playerResponse);
   }
 
-  var nativeParse = JSON.parse;
-  JSON.parse = function () {
-    var result = nativeParse.apply(this, arguments);
-    try { sniff(result); } catch (e) {}
-    return result;
-  };
-  var nativeJson = Response.prototype.json;
-  Response.prototype.json = function () {
-    return nativeJson.apply(this, arguments).then(function (result) {
-      try { sniff(result); } catch (e) {}
-      return result;
-    });
-  };
-  document.addEventListener('DOMContentLoaded', function () {
-    try { sniff(window.ytInitialPlayerResponse); } catch (e) {}
-  });
+  komado.onJson(sniff);
 
   // ------------------------------------------------------------------ InnerTube
   function cfg(key) {
@@ -135,7 +124,7 @@
       });
     }).then(function (res) {
       if (!res.ok) throw new Error('HTTP ' + res.status);
-      return nativeJson.call(res);
+      return res.json();
     });
   }
 
@@ -761,17 +750,6 @@
   }
 
   // ------------------------------------------------------------------ 監視
-  function currentVideoId() {
-    try {
-      var url = new URL(location.href);
-      if (url.pathname === '/watch') return url.searchParams.get('v');
-      var m = url.pathname.match(/^\/(?:shorts|live)\/([\w-]{11})/);
-      return m ? m[1] : null;
-    } catch (e) {
-      return null;
-    }
-  }
-
   // 今の動画で next を叩いたかどうか。動画が変わったら忘れる
   // （ミニプレイヤーや「戻る」で同じ配信に戻ってきたときに、もう一度セッションを張れるようにする）
   var attempted = false;
@@ -809,10 +787,6 @@
       if (enabled) ensureOverlay();
       if (session.replay) replayTick(session, currentVideo());
     }
-  }
-
-  function currentVideo() {
-    return document.querySelector('.html5-video-player video') || document.querySelector('video');
   }
 
   // アーカイブは timeupdate（約 4 回/秒）で細かく進める。一時停止中は弾幕も止める

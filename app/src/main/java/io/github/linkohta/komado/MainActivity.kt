@@ -1,17 +1,11 @@
 package io.github.linkohta.komado
 
-import android.app.PictureInPictureParams
-import android.app.RemoteAction
 import android.content.Intent
-import android.content.pm.ActivityInfo
 import android.content.pm.ApplicationInfo
 import android.graphics.Bitmap
 import android.graphics.Color
-import android.graphics.drawable.Icon
 import android.os.Build
 import android.os.Bundle
-import android.util.Log
-import android.util.Rational
 import android.view.View
 import android.view.ViewGroup
 import android.webkit.CookieManager
@@ -21,49 +15,40 @@ import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.OnBackPressedCallback
-import androidx.activity.SystemBarStyle
-import androidx.activity.enableEdgeToEdge
 import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
-import androidx.core.view.WindowInsetsControllerCompat
 import androidx.core.view.isVisible
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
-import androidx.webkit.ScriptHandler
 import androidx.webkit.WebSettingsCompat
 import androidx.webkit.WebViewCompat
 import androidx.webkit.WebViewFeature
 import kotlinx.coroutines.launch
-import org.json.JSONArray
 import org.json.JSONObject
 
+/**
+ * WebView で YouTube を表示する唯一の画面。
+ * 全画面・PiP・スクリプト注入はそれぞれ [FullscreenController] / [PipController] / [ScriptInjector] に任せ、
+ * ここでは WebView の設定、ページからのメッセージの振り分け、Activity のライフサイクルを扱う。
+ */
 class MainActivity : ComponentActivity() {
 
     private lateinit var content: FrameLayout
     private lateinit var webView: BackgroundWebView
-    private lateinit var fullscreenContainer: FrameLayout
     private lateinit var adBlocker: AdBlocker
+    private lateinit var scripts: ScriptInjector
+    private lateinit var fullscreen: FullscreenController
+    private val pip = PipController(this)
     private val sponsorBlock = SponsorBlockClient()
-    private val injectJs by lazy { readAsset("inject.js") + "\n" + readAsset("livechat.js") }
-
-    private var scriptHandler: ScriptHandler? = null
-    private var hasDocumentStartScript = false
-    private var customView: View? = null
-    private var customViewCallback: WebChromeClient.CustomViewCallback? = null
-    private var lastPipKey: String? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        enableEdgeToEdge(
-            statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-            navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT),
-        )
+        enableTransparentEdgeToEdge()
         super.onCreate(savedInstanceState)
         WebView.setWebContentsDebuggingEnabled(applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0)
 
         adBlocker = AdBlocker(this).apply { loadBundled() }
         buildLayout()
         setupWebView()
-        installScripts()
+        scripts = ScriptInjector(webView, adBlocker).apply { install() }
 
         PlaybackHub.controller = ::runCommand
         onBackPressedDispatcher.addCallback(this, backCallback)
@@ -73,8 +58,8 @@ class MainActivity : ComponentActivity() {
 
         // ダウンロード済みフィルターの読み込みと定期更新
         lifecycleScope.launch {
-            if (adBlocker.loadCached()) installScripts()
-            if (adBlocker.refreshIfStale()) installScripts()
+            if (adBlocker.loadCached()) scripts.install()
+            if (adBlocker.refreshIfStale()) scripts.install()
         }
     }
 
@@ -97,9 +82,7 @@ class MainActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         // Android 12 以降は setAutoEnterEnabled で自動的に PiP に入る
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && shouldEnterPip()) {
-            runCatching { enterPictureInPictureMode(buildPipParams()) }
-        }
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && pip.shouldEnter()) pip.enterNow()
     }
 
     override fun onDestroy() {
@@ -108,7 +91,7 @@ class MainActivity : ComponentActivity() {
             PlaybackHub.reset()
             PlaybackService.stop(this)
         }
-        scriptHandler?.remove()
+        scripts.release()
         (webView.parent as? ViewGroup)?.removeView(webView)
         webView.destroy()
         super.onDestroy()
@@ -120,7 +103,7 @@ class MainActivity : ComponentActivity() {
         val root = FrameLayout(this).apply { setBackgroundColor(getColor(R.color.background)) }
         content = FrameLayout(this)
         webView = BackgroundWebView(this).apply { setBackgroundColor(getColor(R.color.background)) }
-        fullscreenContainer = FrameLayout(this).apply {
+        val fullscreenContainer = FrameLayout(this).apply {
             setBackgroundColor(Color.BLACK)
             isVisible = false
         }
@@ -128,13 +111,8 @@ class MainActivity : ComponentActivity() {
         root.addView(content, matchParent())
         root.addView(fullscreenContainer, matchParent())
         setContentView(root)
-
-        ViewCompat.setOnApplyWindowInsetsListener(content) { view, insets ->
-            val bars = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
-            val ime = insets.getInsets(WindowInsetsCompat.Type.ime())
-            view.setPadding(bars.left, bars.top, bars.right, maxOf(bars.bottom, ime.bottom))
-            WindowInsetsCompat.CONSUMED
-        }
+        content.padForSystemBars(includeIme = true)
+        fullscreen = FullscreenController(this, fullscreenContainer)
     }
 
     // ---------------------------------------------------------------- WebView
@@ -161,10 +139,7 @@ class MainActivity : ComponentActivity() {
 
         webView.webViewClient = YouTubeWebViewClient(
             adBlocker = adBlocker,
-            onPageStarted = { view ->
-                // document-start スクリプト非対応の古い WebView 向けフォールバック
-                if (!hasDocumentStartScript) view.evaluateJavascript(documentStartScript(), null)
-            },
+            onPageStarted = { if (scripts.needsPageStartFallback) scripts.injectIntoCurrentPage() },
             onRendererGone = { recreate() },
         )
         webView.webChromeClient = chromeClient
@@ -179,67 +154,16 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** inject.js と livechat.js を YouTube のページに document-start で注入する（フィルター更新時は差し替え） */
-    private fun installScripts() {
-        val selectors = JSONArray(adBlocker.cosmeticSelectors).toString()
-        if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
-            scriptHandler?.remove()
-            scriptHandler = WebViewCompat.addDocumentStartJavaScript(
-                webView, documentStartScript(), UrlPolicy.YOUTUBE_ORIGIN_RULES,
-            )
-            hasDocumentStartScript = true
-        }
-        // 表示中のページにも反映する
-        evaluate("addSelectors($selectors)")
-    }
-
-    private fun documentStartScript() =
-        "window.__KOMADO_CSS=${JSONArray(adBlocker.cosmeticSelectors)};\n$injectJs"
-
-    private fun evaluate(call: String) {
-        webView.evaluateJavascript("window.__komado&&window.__komado.$call", null)
-    }
-
     private val chromeClient = object : WebChromeClient() {
         override fun onShowCustomView(view: View, callback: CustomViewCallback) {
-            if (customView != null) {
-                callback.onCustomViewHidden()
-                return
-            }
-            customView = view
-            customViewCallback = callback
-            fullscreenContainer.addView(view, matchParent())
-            fullscreenContainer.isVisible = true
-            systemBars().hide(WindowInsetsCompat.Type.systemBars())
             val state = PlaybackHub.state
-            if (state.videoWidth >= state.videoHeight) {
-                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
-            }
+            fullscreen.show(view, callback, isLandscapeVideo = state.videoWidth >= state.videoHeight)
         }
 
-        override fun onHideCustomView() = hideCustomView()
+        override fun onHideCustomView() = fullscreen.hide()
 
         // 読み込み中に出る灰色の再生アイコンを消す
         override fun getDefaultVideoPoster(): Bitmap = Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
-    }
-
-    private fun exitFullscreen() {
-        customViewCallback?.onCustomViewHidden()
-        hideCustomView()
-    }
-
-    private fun hideCustomView() {
-        if (customView == null) return
-        fullscreenContainer.removeAllViews()
-        fullscreenContainer.isVisible = false
-        customView = null
-        customViewCallback = null
-        systemBars().show(WindowInsetsCompat.Type.systemBars())
-        requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    }
-
-    private fun systemBars() = WindowInsetsControllerCompat(window, window.decorView).apply {
-        systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
 
     // ---------------------------------------------------------------- JS bridge
@@ -260,14 +184,14 @@ class MainActivity : ComponentActivity() {
     private fun onPlaybackState(state: PlaybackState) {
         PlaybackHub.update(state)
         if (state.playing && !PlaybackHub.serviceRunning) PlaybackService.start(this)
-        updatePipParams()
+        pip.update(state)
     }
 
     private fun requestSegments(videoId: String) {
         if (!UrlPolicy.isValidVideoId(videoId)) return
         lifecycleScope.launch {
             val segments = sponsorBlock.fetchSegments(videoId)
-            evaluate("setSegments(${JSONObject.quote(videoId)}, $segments)")
+            scripts.call("setSegments(${JSONObject.quote(videoId)}, $segments)")
         }
     }
 
@@ -281,7 +205,7 @@ class MainActivity : ComponentActivity() {
             is PlayerCommand.SeekBy -> "control('seekBy', ${command.seconds})"
             is PlayerCommand.SeekTo -> "control('seekTo', ${command.seconds})"
         }
-        evaluate(call)
+        scripts.call(call)
         if (command == PlayerCommand.Stop) {
             PlaybackService.stop(this)
             // バックグラウンドで停止されたら WebView も休ませる（次の onResume で再開）
@@ -291,71 +215,15 @@ class MainActivity : ComponentActivity() {
 
     // ---------------------------------------------------------------- Picture-in-Picture
 
-    private fun shouldEnterPip(): Boolean {
-        val state = PlaybackHub.state
-        return state.playing && state.videoId != null && !isInPictureInPictureMode
-    }
-
-    private fun updatePipParams() {
-        val state = PlaybackHub.state
-        val key = "${shouldEnterPip()}:${state.playing}:${state.videoWidth}x${state.videoHeight}"
-        if (key == lastPipKey) return
-        lastPipKey = key
-        try {
-            setPictureInPictureParams(buildPipParams())
-        } catch (e: IllegalArgumentException) {
-            Log.w(TAG, "invalid PiP params", e)
-        }
-    }
-
-    private fun buildPipParams(): PictureInPictureParams {
-        val state = PlaybackHub.state
-        val builder = PictureInPictureParams.Builder()
-            .setAspectRatio(aspectRatio(state.videoWidth, state.videoHeight))
-            .setActions(
-                listOf(
-                    remoteAction(R.drawable.ic_rewind, R.string.action_rewind, ControlReceiver.ACTION_REWIND),
-                    if (state.playing) {
-                        remoteAction(R.drawable.ic_pause, R.string.action_pause, ControlReceiver.ACTION_TOGGLE)
-                    } else {
-                        remoteAction(R.drawable.ic_play, R.string.action_play, ControlReceiver.ACTION_TOGGLE)
-                    },
-                    remoteAction(R.drawable.ic_forward, R.string.action_forward, ControlReceiver.ACTION_FORWARD),
-                ),
-            )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(state.playing && state.videoId != null)
-            builder.setSeamlessResizeEnabled(false)
-        }
-        return builder.build()
-    }
-
-    private fun remoteAction(icon: Int, title: Int, action: String) = RemoteAction(
-        Icon.createWithResource(this, icon),
-        getString(title),
-        getString(title),
-        ControlReceiver.pendingIntent(this, action),
-    )
-
     private fun onPipModeChanged(inPip: Boolean) {
-        evaluate("setPip($inPip)")
-        lastPipKey = null
+        scripts.call("setPip($inPip)")
+        pip.invalidate()
         if (inPip) {
-            if (customView == null) content.setPadding(0, 0, 0, 0)
+            if (!fullscreen.isActive) content.setPadding(0, 0, 0, 0)
         } else {
             ViewCompat.requestApplyInsets(content)
             // PiP ウィンドウが閉じられた（✕ / スワイプ）ときは再生を止める
             if (lifecycle.currentState == Lifecycle.State.CREATED) runCommand(PlayerCommand.Pause)
-        }
-    }
-
-    private fun aspectRatio(width: Int, height: Int): Rational {
-        if (width <= 0 || height <= 0) return Rational(16, 9)
-        val ratio = width.toFloat() / height
-        return when {
-            ratio > MAX_ASPECT -> Rational(239, 100)
-            ratio < 1 / MAX_ASPECT -> Rational(100, 239)
-            else -> Rational(width, height)
         }
     }
 
@@ -364,7 +232,7 @@ class MainActivity : ComponentActivity() {
     private val backCallback = object : OnBackPressedCallback(true) {
         override fun handleOnBackPressed() {
             when {
-                customView != null -> exitFullscreen()
+                fullscreen.isActive -> fullscreen.exit()
                 webView.canGoBack() -> webView.goBack()
                 // 再生中ならアプリを閉じずにバックグラウンドへ（再生を続ける）
                 PlaybackHub.state.playing -> moveTaskToBack(true)
@@ -379,19 +247,12 @@ class MainActivity : ComponentActivity() {
         else -> null
     }
 
-    private fun readAsset(name: String) = assets.open(name).bufferedReader().use { it.readText() }
-
     /** "; wv" と "Version/x.x" を取り除いて通常の Chrome と同じ UA にする */
     private fun chromeLikeUserAgent(userAgent: String) =
         userAgent.replace("; wv", "").replace(Regex("""\s*Version/[\d.]+"""), "")
 
-    companion object {
-        private const val TAG = "MainActivity"
-        private const val MAX_ASPECT = 2.39f
-
-        private fun matchParent() = FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.MATCH_PARENT,
-        )
-    }
+    private fun matchParent() = FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.MATCH_PARENT,
+    )
 }
