@@ -71,7 +71,13 @@ export class ChatBar {
   /** プレイヤーの直後に差し込む（YouTube が DOM を作り直したら付け直す）。差し込み先が無ければ false */
   place(): boolean {
     setStyle('komado-chatbar', CSS);
-    const els = this.els || (this.els = this.build());
+    let els = this.els;
+    if (!els) {
+      els = this.els = this.build();
+      // show(true) がバーを作る前に呼ばれていることがある（プローブ・再試行のタイマーからセッションが始まったとき）。
+      // 作った時点の状態で描画しないと、次に update が呼ばれるまで（アーカイブでは呼ばれない）非表示のまま残る
+      this.update();
+    }
     // モバイル版はプレイヤー本体が position: fixed で、本文側に同じ高さの placeholder が置かれる。その直後に入れる
     const anchor = document.querySelector('ytm-watch .player-placeholder') ||
       document.getElementById('player-container-id') || document.getElementById('player');
