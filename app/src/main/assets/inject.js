@@ -5,6 +5,7 @@
  *  3. 要素非表示フィルター / PiP 中は動画だけを表示
  *  4. 再生状態をアプリへ通知し、通知・PiP ボタンからの操作を受ける
  *  5. SponsorBlock のセグメントをスキップ
+ * ライブ配信のコメント（弾幕・投稿）は livechat.js が担当し、このスクリプトの後ろに連結される。
  * 先頭に window.__KOMADO_CSS（フィルターリストのセレクタ配列）がアプリ側で付加される。
  */
 (function () {
@@ -114,7 +115,9 @@
   // ------------------------------------------------------------------ 3. CSS
   var PIP_CSS = [
     'html.komado-pip, html.komado-pip body { background: #000 !important; overflow: hidden !important; }',
-    'html.komado-pip body * { visibility: hidden !important; transform: none !important; contain: none !important; filter: none !important; }',
+    // 弾幕（livechat.js の .komado-dm）だけは動画の上に残す
+    // :where() は詳細度 0 なので、video を表示するルールとの優先順位を変えずに弾幕だけ除外できる
+    'html.komado-pip body *:where(:not(.komado-dm, .komado-dm *)) { visibility: hidden !important; transform: none !important; contain: none !important; filter: none !important; }',
     'html.komado-pip video { visibility: visible !important; position: fixed !important; top: 0 !important; left: 0 !important;' +
       ' width: 100vw !important; height: 100vh !important; max-width: none !important; max-height: none !important;' +
       ' margin: 0 !important; object-fit: contain !important; background: #000 !important; z-index: 2147483647 !important; }'

@@ -44,7 +44,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var fullscreenContainer: FrameLayout
     private lateinit var adBlocker: AdBlocker
     private val sponsorBlock = SponsorBlockClient()
-    private val injectJs by lazy { assets.open("inject.js").bufferedReader().use { it.readText() } }
+    private val injectJs by lazy { readAsset("inject.js") + "\n" + readAsset("livechat.js") }
 
     private var scriptHandler: ScriptHandler? = null
     private var hasDocumentStartScript = false
@@ -179,7 +179,7 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    /** inject.js を YouTube のページに document-start で注入する（フィルター更新時は差し替え） */
+    /** inject.js と livechat.js を YouTube のページに document-start で注入する（フィルター更新時は差し替え） */
     private fun installScripts() {
         val selectors = JSONArray(adBlocker.cosmeticSelectors).toString()
         if (WebViewFeature.isFeatureSupported(WebViewFeature.DOCUMENT_START_SCRIPT)) {
@@ -378,6 +378,8 @@ class MainActivity : ComponentActivity() {
         Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let(UrlPolicy::extractYouTubeUrl)
         else -> null
     }
+
+    private fun readAsset(name: String) = assets.open(name).bufferedReader().use { it.readText() }
 
     /** "; wv" と "Version/x.x" を取り除いて通常の Chrome と同じ UA にする */
     private fun chromeLikeUserAgent(userAgent: String) =
