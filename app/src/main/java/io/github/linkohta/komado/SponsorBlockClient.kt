@@ -6,7 +6,6 @@ import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
 import java.net.HttpURLConnection
-import java.net.URL
 import java.net.URLEncoder
 import java.security.MessageDigest
 
@@ -30,12 +29,8 @@ class SponsorBlockClient {
         val prefix = sha256(videoId).take(4)
         val categories = URLEncoder.encode(JSONArray(CATEGORIES.keys).toString(), "UTF-8")
         val actionTypes = URLEncoder.encode("""["skip"]""", "UTF-8")
-        val url = URL("$API/skipSegments/$prefix?categories=$categories&actionTypes=$actionTypes")
-        val connection = (url.openConnection() as HttpURLConnection).apply {
-            connectTimeout = 10_000
-            readTimeout = 10_000
-        }
-        try {
+        val url = "$API/skipSegments/$prefix?categories=$categories&actionTypes=$actionTypes"
+        Http.get(url, connectTimeoutMs = 10_000, readTimeoutMs = 10_000) { connection ->
             when (connection.responseCode) {
                 HttpURLConnection.HTTP_OK -> {
                     val body = connection.inputStream.bufferedReader().use { it.readText() }
@@ -44,8 +39,6 @@ class SponsorBlockClient {
                 HttpURLConnection.HTTP_NOT_FOUND -> JSONArray() // セグメントなし
                 else -> null
             }
-        } finally {
-            connection.disconnect()
         }
     } catch (e: Exception) {
         Log.w(TAG, "SponsorBlock request failed", e)
