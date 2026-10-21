@@ -14,6 +14,7 @@ Brave の考え方（フィルターリストによる広告ブロック + バ�
 | Google ログイン | WebView 特有の UA と `X-Requested-With` ヘッダーを取り除いてログイン画面を通す |
 | SponsorBlock | スポンサー・自己宣伝・高評価のお願い区間を自動スキップ。動画 ID のハッシュ先頭 4 文字だけを送信 |
 | リンク共有 | YouTube アプリ等の「共有」→ Komado で開ける |
+| ライブチャットの弾幕 | ライブ配信・アーカイブのコメントをニコニコ動画風に動画上へ流す（全画面・PiP 中も）。プレイヤー下のバーで ON/OFF と投稿（配信中のみ）ができる（`assets/livechat.js`） |
 
 ## ビルド
 
@@ -42,6 +43,7 @@ app/src/main/
 │   └── UrlPolicy.kt            表示を許可する URL
 └── assets/
     ├── inject.js               YouTube ページに注入するスクリプト
+    ├── livechat.js             ライブチャットの取得・弾幕表示・投稿
     ├── filters.txt             同梱フィルター
     └── licenses.html           アプリ内のライセンス表示
 ```
@@ -50,6 +52,7 @@ app/src/main/
 
 - YouTube の利用規約上グレーな機能（広告ブロック・バックグラウンド再生）を含むため、Google Play では公開できません。
 - YouTube 側の仕様変更で広告ブロックや PiP 中の再生継続が効かなくなることがあります。主に `assets/inject.js` を修正します。
+- ライブチャットは YouTube の内部 API（`/youtubei/v1/next`・`live_chat/get_live_chat`・`live_chat/get_live_chat_replay`・`live_chat/send_message`）を WebView 内から呼んで実現しているため、仕様変更で動かなくなることがあります。`assets/livechat.js` を修正します。投稿にはログインが必要です。
   - 例: YouTube はウィンドウ面積が画面に比べて小さいと PiP とみなし、Premium 以外では一時停止します。`window.outerWidth/outerHeight` を偽装して回避しています。
 - Google が WebView からのログインを検出した場合はログインできません（その場合は未ログインで利用）。
 - 再生を止めて通知を閉じるまでは、バックグラウンドでもページが動き続けます（電池消費のため、使い終わったら通知の ✕ で閉じてください）。
